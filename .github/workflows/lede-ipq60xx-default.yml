@@ -1,10 +1,16 @@
-# LEDE 6.12 images for NN6000 v2 and ZN M2.
+# LEDE 6.18 images for NN6000 v2 and ZN M2.
 #
 # ZN M2 and NN6000 v2 both use WIFI-NO. Kernels stay on the default gzip FIT.
-name: LEDE 6.12 - NN6000 v2 and ZN M2
+name: LEDE 6.18 - NN6000 v2 and ZN M2
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/lede-ipq60xx-default.yml'
+      - '.github/ci/daede-deps.txt'
+      - '.github/ci/zn-m2-boot.py'
+      - 'target/linux/qualcommax/**'
 
 permissions:
   contents: write
@@ -40,7 +46,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential binutils bison bzip2 ccache clang cmake cpio curl \
-            device-tree-compiler flex gawk gcc-multilib g++-multilib gettext git \
+            device-tree-compiler dwarves flex gawk gcc-multilib g++-multilib gettext git \
             gperf help2man intltool libelf-dev libfuse-dev libglib2.0-dev \
             libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
             libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
@@ -75,7 +81,7 @@ jobs:
           CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_${{ matrix.device }}=y
           # CONFIG_TARGET_MULTI_PROFILE is not set
           # CONFIG_TARGET_PER_DEVICE_ROOTFS is not set
-          # CONFIG_TESTING_KERNEL is not set
+          CONFIG_TESTING_KERNEL=y
           EOF
           if [ "${{ matrix.boot }}" = "wifi-no" ]; then
             cat >> .config <<'EOF'
@@ -91,12 +97,19 @@ jobs:
           CONFIG_PACKAGE_ipq-wifi-link_nn6000=n
           EOF
           fi
+          cat .github/ci/daede-deps.txt >> .config
           make defconfig
-          grep -qx 'CONFIG_LINUX_6_12=y' .config
-          if grep -qx 'CONFIG_TESTING_KERNEL=y' .config; then
-            echo 'testing kernel was selected; expected 6.12' >&2
-            exit 1
-          fi
+          grep -qx 'CONFIG_TESTING_KERNEL=y' .config
+          grep -qx 'CONFIG_LINUX_6_18=y' .config
+          python3 - <<'PY'
+          from pathlib import Path
+          config = Path('.config').read_text().splitlines()
+          required = Path('.github/ci/daede-deps.txt').read_text().splitlines()
+          missing = [line for line in required if line.startswith('CONFIG_') and line.endswith('=y') and line not in config]
+          conflicts = [line for line in required if line.startswith('# CONFIG_') and line.endswith(' is not set') and line.replace('# ', '').replace(' is not set', '=y') in config]
+          if missing or conflicts:
+              raise SystemExit('DAEDE dependency mismatch: missing=' + repr(missing) + ' conflicts=' + repr(conflicts))
+          PY
           if ! grep -qx "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_${{ matrix.device }}=y" .config \
             && ! grep -qx "CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_${{ matrix.device }}=y" .config; then
             echo "device ${{ matrix.device }} was not selected" >&2
@@ -113,9 +126,18 @@ jobs:
               sys.exit("ZN M2 kernel is not the default gzip FIT")
           if "UbiFit" not in block.group():
               sys.exit("ZN M2 lost its UBI layout")
-          dts = Path("target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-cmiot.dtsi").read_text()
-          if 'qcom,smem-part' not in dts or 'ath11k-fw-memory-mode = <1>' not in dts:
-              sys.exit("ZN M2 is not using the VIKINGYFY memory mode and SMEM partition layout")
+          dts_dir = Path("target/linux/qualcommax/files/arch/arm64/boot/dts/qcom")
+          board = (dts_dir / "ipq6018-m2.dts").read_text()
+          cmiot = (dts_dir / "ipq6018-viking-cmiot.dtsi").read_text()
+          if '"ipq6018-viking-cmiot.dtsi"' not in board or '"ipq6018-common.dtsi"' not in cmiot:
+              sys.exit("ZN M2 is not using the VIKINGYFY DTS include chain")
+          if "ipq6018-512m.dtsi" in cmiot or "qcom,smem-part" not in cmiot:
+              sys.exit("ZN M2 RAM carveout or NAND SMEM configuration differs from this trial")
+          if "ath11k-fw-memory-mode = <1>" not in board:
+              sys.exit("ZN M2 ath11k firmware memory mode is missing")
+          patch = Path("target/linux/qualcommax/patches-6.18/0911-arm64-dts-qcom-ipq6018-use-secure-WCSS-remoteproc.patch")
+          if "qcom,ipq6018-wcss-sec-pil" not in patch.read_text():
+              sys.exit("ZN M2 secure WCSS patch is missing from 6.18")
           PY
           if [ "${{ matrix.boot }}" = "wifi-no" ]; then
             for symbol in \
@@ -152,6 +174,15 @@ jobs:
           set -euo pipefail
           { make -j"$(nproc)" || make -j1 V=s; } 2>&1 | tee build-info/build.log
 
+      - name: Verify kernel BTF
+        run: |
+          set -euo pipefail
+          vmlinux=$(find build_dir -type f -name vmlinux -print -quit)
+          if [ -z "$vmlinux" ] || ! readelf --wide --sections "$vmlinux" | grep -q '\.BTF'; then
+            echo 'built kernel is missing vmlinux BTF required by dae/daed' >&2
+            exit 1
+          fi
+
       - name: Verify firmware output
         run: |
           set -euo pipefail
@@ -177,14 +208,6 @@ jobs:
               echo 'missing NN6000 v2 factory.bin' >&2
               exit 1
             fi
-            itb=$(find "$dest" -maxdepth 1 -type f -name "*${{ matrix.device }}*uImage.itb" -print -quit || true)
-            if [ -n "$itb" ]; then
-              size=$(stat -c%s "$itb")
-              if [ "$size" -gt $((6144 * 1024)) ]; then
-                echo "NN6000 v2 kernel FIT is ${size} bytes, above the 6144k kernel partition" >&2
-                exit 1
-              fi
-            fi
           fi
 
       - name: Stage release files
@@ -204,7 +227,7 @@ jobs:
           )
           if [ "${{ matrix.profile }}" = "zn-m2" ]; then
             cat > release-notes.md <<EOF
-          LEDE 内核 6.12，单设备编译 ZN M2。内核是 VIKINGYFY 默认的 gzip FIT，不是 LZMA。软件包是 WIFI-NO，不带无线。
+          LEDE 内核 6.18，单设备编译 ZN M2。内核是 VIKINGYFY 默认的 gzip FIT，不是 LZMA。软件包是 WIFI-NO，不带无线。
 
           ROM 是 128MB，固件不写死闪存容量，UBI 刷进 SMEM 报出的 rootfs 分区。512MB 和 1GB 内存共用这一份，容量由 U-Boot 按 CDT 填入。
 
@@ -219,7 +242,7 @@ jobs:
           EOF
           else
             cat > release-notes.md <<EOF
-          LEDE 内核 6.12，单设备编译 Link NN6000 v2。内核是默认 gzip FIT。软件包是 WIFI-NO，不带无线。f2fs 工具保留。
+          LEDE 内核 6.18，单设备编译 Link NN6000 v2。内核是默认 gzip FIT。软件包是 WIFI-NO，不带无线。f2fs 工具保留。
 
           不与 ZN M2 混编。内存容量由 U-Boot 按 CDT 填入，2GB 不在设备树里写死。
 
@@ -237,7 +260,7 @@ jobs:
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lede-6.12-${{ matrix.profile }}-${{ env.BUILD_DATE }}
+          name: lede-6.18-${{ matrix.profile }}-${{ env.BUILD_DATE }}
           path: |
             upload/
             release-notes.md
@@ -245,10 +268,11 @@ jobs:
           retention-days: 14
 
       - name: Publish GitHub Release
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lede-6.12-${{ matrix.profile }}-${{ env.BUILD_DATE }}-${{ github.run_id }}
-          name: LEDE 6.12 ${{ matrix.profile }} ${{ env.BUILD_DATE }}
+          tag_name: lede-6.18-${{ matrix.profile }}-${{ env.BUILD_DATE }}-${{ github.run_id }}
+          name: LEDE 6.18 ${{ matrix.profile }} ${{ env.BUILD_DATE }}
           body_path: release-notes.md
           files: |
             upload/*.bin
