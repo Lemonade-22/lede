@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build ZN M2 without WiFi, matching the WIFI-NO package set.
+"""Build ZN M2 and NN6000 v2 without WiFi.
 
-The kernel stays on VIKINGYFY's default gzip FitImage. This script does not
-change compression, flash size, or RAM size.
+Both kernels stay on the default gzip FitImage. This script does not change
+compression, flash size, or RAM size.
 """
 
 import re
@@ -50,6 +50,22 @@ def drop_zn_m2_wifi(path: Path) -> None:
     path.write_text(text[: matches[0].start()] + block + text[matches[0].end() :])
 
 
+def drop_nn6000_wifi(path: Path) -> None:
+    text = path.read_text()
+    old = "\tDEVICE_PACKAGES := ipq-wifi-link_nn6000 kmod-fs-f2fs f2fs-tools\n"
+    new = (
+        "\tDEVICE_PACKAGES := kmod-fs-f2fs f2fs-tools \\\n"
+        "\t\t-kmod-ath11k-ahb -ath11k-firmware-ipq6018 -wpad-openssl \\\n"
+        "\t\t-ipq-wifi-link_nn6000\n"
+    )
+    if text.count(old) != 1:
+        sys.exit("unexpected NN6000 DEVICE_PACKAGES line")
+    block = re.search(r"(?ms)^define Device/link_nn6000-v1\n.*?^endef$", text)
+    if not block or "\t$(call Device/FitImage)\n" not in block.group() or "FitImageLzma" in block.group():
+        sys.exit("NN6000 kernel is not the default gzip FIT")
+    path.write_text(text.replace(old, new, 1))
+
+
 def main() -> None:
     qualcommax = ROOT / "target/linux/qualcommax"
     if not (qualcommax / "image/Makefile").is_file():
@@ -57,7 +73,8 @@ def main() -> None:
     strip_wifi_defaults(qualcommax / "Makefile")
     strip_wifi_defaults(qualcommax / "ipq60xx/target.mk")
     drop_zn_m2_wifi(qualcommax / "image/ipq60xx.mk")
-    print("ZN M2: WiFi packages removed, kernel FIT stays gzip")
+    drop_nn6000_wifi(qualcommax / "image/ipq60xx.mk")
+    print("ZN M2 and NN6000 v2: WiFi packages removed, kernel FIT stays gzip")
 
 
 if __name__ == "__main__":

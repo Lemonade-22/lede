@@ -1,8 +1,6 @@
 # LEDE 6.12 images for NN6000 v2 and ZN M2.
 #
-# ZN M2 kernel stays on VIKINGYFY's default gzip FIT. Its package set is
-# WIFI-NO: ath11k and the board WiFi firmware are removed. Flash size is not
-# encoded; U-Boot supplies the RAM size. NN6000 v2 keeps LEDE defaults.
+# ZN M2 and NN6000 v2 both use WIFI-NO. Kernels stay on the default gzip FIT.
 name: LEDE 6.12 - NN6000 v2 and ZN M2
 
 on:
@@ -22,7 +20,7 @@ jobs:
         include:
           - profile: nn6000-v2
             device: link_nn6000-v2
-            boot: default
+            boot: wifi-no
           - profile: zn-m2
             device: zn_m2
             boot: wifi-no
@@ -61,7 +59,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Remove ZN M2 WiFi packages
+      - name: Remove WiFi packages
         if: matrix.boot == 'wifi-no'
         run: |
           set -euo pipefail
@@ -90,6 +88,7 @@ jobs:
           CONFIG_PACKAGE_ath11k-firmware-qcn9074=n
           CONFIG_PACKAGE_wpad-openssl=n
           CONFIG_PACKAGE_ipq-wifi-zn_m2=n
+          CONFIG_PACKAGE_ipq-wifi-link_nn6000=n
           EOF
           fi
           make defconfig
@@ -124,7 +123,8 @@ jobs:
               CONFIG_PACKAGE_kmod-ath11k-ahb \
               CONFIG_PACKAGE_ath11k-firmware-ipq6018 \
               CONFIG_PACKAGE_wpad-openssl \
-              CONFIG_PACKAGE_ipq-wifi-zn_m2
+              CONFIG_PACKAGE_ipq-wifi-zn_m2 \
+              CONFIG_PACKAGE_ipq-wifi-link_nn6000
             do
               if grep -Eq "^${symbol}=[ym]$" .config; then
                 echo "${symbol} is still selected" >&2
@@ -219,14 +219,14 @@ jobs:
           EOF
           else
             cat > release-notes.md <<EOF
-          LEDE 内核 6.12，单设备编译 Link NN6000 v2。内核是默认 gzip FIT，包保持 LEDE 默认。
+          LEDE 内核 6.12，单设备编译 Link NN6000 v2。内核是默认 gzip FIT。软件包是 WIFI-NO，不带无线。f2fs 工具保留。
 
           不与 ZN M2 混编。内存容量由 U-Boot 按 CDT 填入，2GB 不在设备树里写死。
 
           刷机：
           - 首次 / 救砖：\`*-factory.bin\`
           - 系统内升级：\`*-sysupgrade.bin\`
-          不要刷 ZN M2 的 factory.ubi。
+          不要刷 ZN M2 的 factory.ubi。此版本不带无线。
 
           源码提交：${SOURCE_COMMIT}
           编译时间：${BUILD_DATE} Asia/Shanghai
