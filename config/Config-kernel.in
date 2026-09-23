@@ -565,6 +565,13 @@ config KERNEL_BPF_EVENTS
 	  for sending data from BPF programs to user-space for post-processing
 	  or logging.
 
+config KERNEL_BPF_STREAM_PARSER
+	bool "Compile the kernel with BPF stream parser support"
+	depends on KERNEL_CGROUP_BPF
+	help
+	  Allow BPF programs to parse TCP streams with sockmap. DAE and daed
+	  require this option for their eBPF networking features.
+
 config KERNEL_PROBE_EVENTS_BTF_ARGS
 	bool "Support BTF function arguments for probe events"
 	depends on KERNEL_DEBUG_INFO_BTF && KERNEL_KPROBE_EVENTS && LINUX_6_6
