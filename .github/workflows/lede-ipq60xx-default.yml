@@ -1,0 +1,109 @@
+name: LEDE 6.12 - NN6000 v2 and ZN M2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout LEDE
+        uses: actions/checkout@v4
+
+      - name: Prepare build environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential binutils bison bzip2 ccache clang cmake cpio curl \
+            device-tree-compiler flex gawk gcc-multilib g++-multilib gettext git \
+            gperf help2man intltool libelf-dev libfuse-dev libglib2.0-dev \
+            libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
+            libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
+            llvm ninja-build patch pkgconf python3 python3-pyelftools \
+            python3-setuptools rsync scons squashfs-tools subversion swig \
+            texinfo uglifyjs unzip wget xmlto xxd zlib1g-dev \
+            antlr3 asciidoc autoconf automake autopoint genisoimage \
+            libc6-dev-i386 p7zip-full qemu-utils
+          sudo apt-get clean
+          df -h
+
+      - name: Install LEDE default feeds
+        run: |
+          set -euo pipefail
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure both devices with LEDE defaults
+        run: |
+          set -euo pipefail
+          grep -qx 'KERNEL_PATCHVER:=6.12' target/linux/qualcommax/Makefile
+          cat > .config <<'EOF'
+          CONFIG_TARGET_qualcommax=y
+          CONFIG_TARGET_qualcommax_ipq60xx=y
+          CONFIG_TARGET_MULTI_PROFILE=y
+          # CONFIG_TARGET_ALL_PROFILES is not set
+          CONFIG_TARGET_PER_DEVICE_ROOTFS=y
+          CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
+          CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=y
+          # CONFIG_TESTING_KERNEL is not set
+          EOF
+          make defconfig
+          grep -qx 'CONFIG_LINUX_6_12=y' .config
+          grep -qx 'CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y' .config
+          grep -qx 'CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=y' .config
+          mkdir -p build-info
+          cp .config build-info/build.config
+          ./scripts/diffconfig.sh > build-info/diffconfig.txt
+          git rev-parse HEAD > build-info/source-commit.txt
+          ./scripts/feeds list -s > build-info/feeds.txt
+
+      - name: Download sources
+        run: |
+          set -euo pipefail
+          make download -j8 2>&1 | tee build-info/download.log
+
+      - name: Build firmware
+        run: |
+          set -euo pipefail
+          { make -j"$(nproc)" || make -j1 V=s; } 2>&1 | tee build-info/build.log
+
+      - name: Verify firmware output
+        run: |
+          set -euo pipefail
+          for device in link_nn6000-v2 zn_m2; do
+            if ! find bin/targets/qualcommax/ipq60xx -maxdepth 1 -type f \
+              -name "*${device}*sysupgrade*" -print -quit | grep -q .; then
+              echo "Missing sysupgrade image for ${device}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: lede-6.12-nn6000v2-zn-m2-firmware
+          path: |
+            bin/targets/qualcommax/ipq60xx/
+            !bin/targets/qualcommax/ipq60xx/packages/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload configuration and build logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lede-6.12-nn6000v2-zn-m2-build-info
+          path: build-info/
+          if-no-files-found: warn
+          retention-days: 14
