@@ -5,7 +5,7 @@
 #include "ipq6018.dtsi"
 #include "ipq6018-ess.dtsi"
 #include "ipq6018-cpufreq.dtsi"
-#include "ipq6018-256m.dtsi"
+#include "ipq6018-512m.dtsi"
 #include "ipq6018-nss.dtsi"
 
 
@@ -186,6 +186,11 @@
 		nand-ecc-strength = <4>;
 		nand-ecc-step-size = <512>;
 		nand-bus-width = <8>;
+
+		/* Partition map comes from SMEM, so 128/256/512MB NAND share this image. */
+		partitions {
+			compatible = "qcom,smem-part";
+		};
 	};
 };
 
@@ -231,7 +236,8 @@
 
 &wifi {
 	status = "okay";
-	qcom,ath11k-fw-memory-mode = <2>;
+	/* Profile 1 is the 512MB ath11k map; 1GB uses the same image. */
+	qcom,ath11k-fw-memory-mode = <1>;
  };
 
 &cpu0 {

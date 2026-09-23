@@ -118,9 +118,9 @@ jobs:
               sys.exit("ZN M2 is not using FitImageLzma")
           if "UbiFit" not in block.group():
               sys.exit("ZN M2 lost its UBI layout")
-          dtsi = Path("target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-256m.dtsi").read_text()
-          if "0x1000000" not in dtsi or "0x2800000" in dtsi:
-              sys.exit("Q6 reservation was not reduced to 16MiB")
+          dts = Path("target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-cmiot.dtsi").read_text()
+          if 'ipq6018-512m.dtsi' not in dts or 'qcom,smem-part' not in dts or 'ath11k-fw-memory-mode = <1>' not in dts:
+              sys.exit("ZN M2 is not using the shared 512MB/1GB memory and SMEM partition layout")
           PY
             for symbol in \
               CONFIG_PACKAGE_kmod-ath11k \
@@ -213,14 +213,11 @@ jobs:
             cat > release-notes.md <<EOF
           LEDE 内核 6.12，单设备编译 ZN M2。
 
-          上一版把 NN6000 v2 和 ZN M2 放进同一次 LEDE 默认 defconfig。ZN M2 只有 256MB 内存，那份固件仍带 ath11k，Q6 预留 40MB，内核 FIT 使用 gzip，刷入后无法启动。产物也只进了 Actions Artifacts，没有 GitHub Release。
+          上一版按 256MB 设备树编译，Q6 和 ath11k 内存档都锁在 256MB，NAND 也没有读 SMEM 分区表。
 
-          这次按 OpenWRT-CI_Self 的 ZN-M2-WIFI-NO 改到 LEDE 树：
-          - 去掉 ath11k、对应固件、wpad 和 ipq-wifi-zn_m2
-          - Q6 预留从 40MB 改为 16MB
-          - 仅 ZN M2 的 FIT 改为 LZMA，NAND 仍是原来的 UbiFit
-          - NSS 驱动保留，其它 LEDE 默认软件包保留
-          - NN6000 v2 单独编译，不吃这些改动
+          512MB 和 1GB 用同一份固件。内存大小由 U-Boot 按 CDT 写进 memory 节点，设备树不写死容量；Q6 使用 ipq6018-512m.dtsi，1GB 机器多出来的内存照常可用。NAND 分区用 qcom,smem-part，从板上的 SMEM 读取，所以不同闪存容量也不用分别编译。
+
+          这份 CI 固件另外按 ZN-M2-WIFI-NO 去掉了 ath11k / wpad，FIT 改为 LZMA，NSS 和其它 LEDE 默认包保留。NN6000 v2 单独编译。
 
           刷机：
           - U-Boot / 救砖：\`*-factory.ubi\`（原厂网页恢复不要超过 95MB）
@@ -235,7 +232,7 @@ jobs:
             cat > release-notes.md <<EOF
           LEDE 内核 6.12，单设备编译 Link NN6000 v2，使用 LEDE 默认包和默认 gzip FIT。
 
-          不与 ZN M2 混编。ZN M2 需要单独的无无线 LZMA 固件，混在同一次默认配置里会把 ath11k 带进 256MB 的机器。
+          不与 ZN M2 混编。ZN M2 单独编译，使用 512MB/1GB 共用的内存布局。
 
           刷机：
           - 首次 / 救砖：\`*-factory.bin\`

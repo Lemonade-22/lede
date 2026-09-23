@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Make LEDE's ZN M2 image boot on the 256MB NAND unit.
+"""Drop ZN M2 WiFi packages and compress its FIT with LZMA.
 
-OpenWRT-CI_Self does this in Scripts/ZN-M2-WIFI-NO.py against VIKINGYFY's
-tree (Device/nand-common plus ipq6018-nowifi.dtsi). LEDE inlines
-FitImage+UbiFit and reserves 40MiB for Q6 in ipq6018-256m.dtsi, so the same
-result has to be applied to those files instead of copied verbatim.
+RAM and NAND size are not selected here. ipq6018-cmiot.dtsi uses the 512MB
+reservation profile plus qcom,smem-part, which is what lets one image boot
+512MB and 1GB boards with different NAND sizes.
 """
 
 import re
@@ -55,15 +54,6 @@ def switch_zn_m2_to_lzma(path: Path) -> None:
     path.write_text(text[: matches[0].start()] + block + text[matches[0].end() :])
 
 
-def shrink_q6(path: Path) -> None:
-    text = path.read_text()
-    old = "\treg = <0x0 0x4ab00000 0x0 0x2800000>;"
-    new = "\treg = <0x0 0x4ab00000 0x0 0x1000000>;"
-    if text.count(old) != 1:
-        sys.exit("unexpected Q6 reservation in ipq6018-256m.dtsi")
-    path.write_text(text.replace(old, new, 1))
-
-
 def main() -> None:
     qualcommax = ROOT / "target/linux/qualcommax"
     if not (qualcommax / "image/Makefile").is_file():
@@ -73,8 +63,7 @@ def main() -> None:
     strip_wifi_defaults(qualcommax / "Makefile")
     strip_wifi_defaults(qualcommax / "ipq60xx/target.mk")
     switch_zn_m2_to_lzma(qualcommax / "image/ipq60xx.mk")
-    shrink_q6(qualcommax / "files/arch/arm64/boot/dts/qcom/ipq6018-256m.dtsi")
-    print("ZN M2: WiFi defaults removed, Q6 reservation is 16MiB, FIT is LZMA")
+    print("ZN M2: WiFi defaults removed, FIT is LZMA")
 
 
 if __name__ == "__main__":
