@@ -1,11 +1,9 @@
 # LEDE 6.12 images for NN6000 v2 and ZN M2.
 #
-# A combined "LEDE default" build does not boot on ZN M2: that board has
-# 256MB RAM, a 40MB Q6 reservation, ath11k in the target defaults, and a
-# gzip FIT. OpenWRT-CI_Self's ZN-M2-WIFI-NO profile builds this device
-# alone, drops WiFi, and switches the FIT to LZMA. NN6000 v2 stays on the
-# untouched LEDE defaults. Each profile is published as a GitHub Release;
-# Actions artifacts are only a 14-day copy.
+# ZN M2 flash is 128MB. The image does not encode a flash size: UBI is
+# written into the rootfs partition reported by SMEM. RAM size is also left
+# to U-Boot. This job only builds the device alone, drops WiFi, and uses an
+# LZMA FIT. NN6000 v2 stays on the untouched LEDE defaults.
 name: LEDE 6.12 - NN6000 v2 and ZN M2
 
 on:
@@ -64,7 +62,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Adapt ZN M2 for 256MB NAND boot
+      - name: Adapt ZN M2 image
         if: matrix.boot == 'wifi-no'
         run: |
           set -euo pipefail
@@ -213,9 +211,9 @@ jobs:
             cat > release-notes.md <<EOF
           LEDE 内核 6.12，单设备编译 ZN M2。
 
-          上一版按 256MB 设备树编译，Q6 和 ath11k 内存档都锁在 256MB，NAND 也没有读 SMEM 分区表。
+          上一版把 ZN M2 和 NN6000 混在同一次默认配置里，ZN M2 的 NAND 分区也没有从 SMEM 读取。
 
-          512MB 和 1GB 用同一份固件。内存大小由 U-Boot 按 CDT 写进 memory 节点，设备树不写死容量；Q6 使用 ipq6018-512m.dtsi，1GB 机器多出来的内存照常可用。NAND 分区用 qcom,smem-part，从板上的 SMEM 读取，所以不同闪存容量也不用分别编译。
+          ZN M2 的 ROM 是 128MB。固件不写死闪存容量，UBI 刷进 SMEM 报出的 rootfs 分区。512MB 和 1GB 内存也共用这一份，容量由 U-Boot 按 CDT 填入。
 
           这份 CI 固件另外按 ZN-M2-WIFI-NO 去掉了 ath11k / wpad，FIT 改为 LZMA，NSS 和其它 LEDE 默认包保留。NN6000 v2 单独编译。
 

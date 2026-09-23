@@ -187,7 +187,7 @@
 		nand-ecc-step-size = <512>;
 		nand-bus-width = <8>;
 
-		/* Partition map comes from SMEM, so 128/256/512MB NAND share this image. */
+		/* ZN M2 is 128MB NAND. Partition size comes from SMEM, not from this file. */
 		partitions {
 			compatible = "qcom,smem-part";
 		};

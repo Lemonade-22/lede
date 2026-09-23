@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Drop ZN M2 WiFi packages and compress its FIT with LZMA.
 
-RAM and NAND size are not selected here. ipq6018-cmiot.dtsi uses the 512MB
-reservation profile plus qcom,smem-part, which is what lets one image boot
-512MB and 1GB boards with different NAND sizes.
+This script does not set flash or RAM size. The board has 128MB NAND;
+the partition size is read from SMEM. RAM size is filled in by U-Boot.
 """
 
 import re
