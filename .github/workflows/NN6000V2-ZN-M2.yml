@@ -74,6 +74,51 @@ jobs:
           CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y
           CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=y
           EOF
+          # LEDE 6.12/6.18 do not expose KERNEL_BPF_STREAM_PARSER in Config-kernel.in.
+          # Skip this unsupported request; keep all other available DAE dependencies.
+          if ! grep -q '^config KERNEL_BPF_STREAM_PARSER          if [ -n "$EXTRA_PACKAGES" ]; then
+            printf '%s\n' "$EXTRA_PACKAGES" >> .config
+          fi
+          bash ../ci-tools/Scripts/DAEDE.sh configure
+          make defconfig
+          bash ../ci-tools/Scripts/DAEDE.sh verify
+          grep -qx 'CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2=y' .config
+          grep -qx 'CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=y' .config
+          mkdir -p artifact
+          cp .config artifact/lede-ipq60xx-nn6000-v2-zn-m2.config
+
+      - name: Download packages
+        if: ${{ !inputs.TEST }}
+        working-directory: lede
+        run: make download -j"$(nproc)"
+
+      - name: Compile firmware
+        if: ${{ !inputs.TEST }}
+        working-directory: lede
+        run: make -j"$(nproc)" || make -j1 V=s
+
+      - name: Collect firmware and build information
+        if: ${{ !inputs.TEST }}
+        working-directory: lede
+        run: |
+          set -euo pipefail
+          cp -a bin/targets/qualcommax/ipq60xx artifact/firmware
+          mkdir -p artifact/buildinfo
+          find bin/targets/qualcommax/ipq60xx -maxdepth 1 -type f \
+            \( -name '*.manifest' -o -name '*.buildinfo' \) \
+            -exec cp -t artifact/buildinfo {} +
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lede-ipq60xx-nn6000-v2-zn-m2
+          path: lede/artifact/
+          if-no-files-found: error
+          retention-days: 14
+ config/Config-kernel.in; then
+            sed -i '/^CONFIG_KERNEL_BPF_STREAM_PARSER=y$/d' ../ci-tools/Config/DAEDE.txt
+            echo 'BPF stream parser is unavailable in LEDE Kconfig; leaving it disabled.'
+          fi
           cat ../ci-tools/Config/DAEDE.txt >> .config
           if [ -n "$EXTRA_PACKAGES" ]; then
             printf '%s\n' "$EXTRA_PACKAGES" >> .config
