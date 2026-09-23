@@ -1,9 +1,8 @@
 # LEDE 6.12 images for NN6000 v2 and ZN M2.
 #
-# Image parameters follow VIKINGYFY defaults: gzip kernel FIT, WiFi left
-# enabled, NAND/eMMC layout unchanged. ZN M2 flash is 128MB and is not
-# encoded in the image; U-Boot supplies the RAM size. Each device is built
-# alone and published as a GitHub Release.
+# ZN M2 kernel stays on VIKINGYFY's default gzip FIT. Its package set is
+# WIFI-NO: ath11k and the board WiFi firmware are removed. Flash size is not
+# encoded; U-Boot supplies the RAM size. NN6000 v2 keeps LEDE defaults.
 name: LEDE 6.12 - NN6000 v2 and ZN M2
 
 on:
@@ -23,8 +22,10 @@ jobs:
         include:
           - profile: nn6000-v2
             device: link_nn6000-v2
+            boot: default
           - profile: zn-m2
             device: zn_m2
+            boot: wifi-no
     defaults:
       run:
         shell: bash
@@ -60,6 +61,13 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Remove ZN M2 WiFi packages
+        if: matrix.boot == 'wifi-no'
+        run: |
+          set -euo pipefail
+          python3 .github/ci/zn-m2-boot.py
+          git diff --stat -- target/linux/qualcommax
+
       - name: Configure this device
         run: |
           set -euo pipefail
@@ -71,6 +79,19 @@ jobs:
           # CONFIG_TARGET_PER_DEVICE_ROOTFS is not set
           # CONFIG_TESTING_KERNEL is not set
           EOF
+          if [ "${{ matrix.boot }}" = "wifi-no" ]; then
+            cat >> .config <<'EOF'
+          CONFIG_PACKAGE_kmod-ath=n
+          CONFIG_PACKAGE_kmod-ath11k=n
+          CONFIG_PACKAGE_kmod-ath11k-ahb=n
+          CONFIG_PACKAGE_kmod-ath11k-pci=n
+          CONFIG_PACKAGE_ath11k-firmware-ipq6018=n
+          CONFIG_PACKAGE_ath11k-firmware-ipq6018-ddwrt=n
+          CONFIG_PACKAGE_ath11k-firmware-qcn9074=n
+          CONFIG_PACKAGE_wpad-openssl=n
+          CONFIG_PACKAGE_ipq-wifi-zn_m2=n
+          EOF
+          fi
           make defconfig
           grep -qx 'CONFIG_LINUX_6_12=y' .config
           if grep -qx 'CONFIG_TESTING_KERNEL=y' .config; then
@@ -97,6 +118,20 @@ jobs:
           if 'qcom,smem-part' not in dts or 'ath11k-fw-memory-mode = <1>' not in dts:
               sys.exit("ZN M2 is not using the VIKINGYFY memory mode and SMEM partition layout")
           PY
+          if [ "${{ matrix.boot }}" = "wifi-no" ]; then
+            for symbol in \
+              CONFIG_PACKAGE_kmod-ath11k \
+              CONFIG_PACKAGE_kmod-ath11k-ahb \
+              CONFIG_PACKAGE_ath11k-firmware-ipq6018 \
+              CONFIG_PACKAGE_wpad-openssl \
+              CONFIG_PACKAGE_ipq-wifi-zn_m2
+            do
+              if grep -Eq "^${symbol}=[ym]$" .config; then
+                echo "${symbol} is still selected" >&2
+                exit 1
+              fi
+            done
+          fi
           mkdir -p build-info
           cp .config build-info/build.config
           ./scripts/diffconfig.sh > build-info/diffconfig.txt
@@ -169,14 +204,14 @@ jobs:
           )
           if [ "${{ matrix.profile }}" = "zn-m2" ]; then
             cat > release-notes.md <<EOF
-          LEDE 内核 6.12，单设备编译 ZN M2，镜像参数与 VIKINGYFY 默认一致：gzip 内核 FIT，保留无线和 LEDE 默认包。
+          LEDE 内核 6.12，单设备编译 ZN M2。内核是 VIKINGYFY 默认的 gzip FIT，不是 LZMA。软件包是 WIFI-NO，不带无线。
 
           ROM 是 128MB，固件不写死闪存容量，UBI 刷进 SMEM 报出的 rootfs 分区。512MB 和 1GB 内存共用这一份，容量由 U-Boot 按 CDT 填入。
 
           刷机：
           - U-Boot / 救砖：\`*-factory.ubi\`（原厂网页恢复不要超过 95MB）
           - 已经在 OpenWrt 里：\`*-sysupgrade.bin\`
-          不要刷 NN6000 的 factory.bin。
+          不要刷 NN6000 的 factory.bin。此版本不带无线。
 
           源码提交：${SOURCE_COMMIT}
           编译时间：${BUILD_DATE} Asia/Shanghai
