@@ -5,7 +5,7 @@
 #
 # Copyright (C) 2020 KFERMercer
 #
-name: OpenWrt-CI - ZN-M2
+name: OpenWrt-CI - ZN-M2 WIFI-NO
 
 on:
   workflow_dispatch:
@@ -114,6 +114,9 @@ jobs:
           print("ZN-M2: bootloader-supplied RAM, shared image for 512 MiB / 1 GiB DDR configurations")
           PY
 
+      - name: Remove wireless defaults and LuCI pages
+        run: python3 .github/ci/zn-m2-wifi-no.py prepare
+
       - name: Generate configuration file
         run: |
           cat > .config <<'EOF'
@@ -126,6 +129,8 @@ jobs:
           EOF
           make defconfig
           mkdir -p ./artifact/buildinfo
+          python3 .github/ci/zn-m2-wifi-no.py configure
+          make defconfig
           cp .config ./artifact/buildinfo/config.txt
           ./scripts/diffconfig.sh > ./artifact/buildinfo/diffconfig.txt
           git rev-parse HEAD > ./artifact/buildinfo/source-commit.txt
@@ -137,16 +142,15 @@ jobs:
               "CONFIG_TARGET_qualcommax=y",
               "CONFIG_TARGET_qualcommax_ipq60xx=y",
               "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y",
-              "CONFIG_PACKAGE_kmod-ath11k-ahb=y",
-              "CONFIG_PACKAGE_ath11k-firmware-ipq6018=y",
           )
           missing = [line for line in required if line not in config]
           for line in missing:
               print(f"::error::Required configuration missing after make defconfig: {line}")
           if missing:
               raise SystemExit(1)
-          print("ZN-M2 target and LEDE default WiFi packages verified")
+          print("ZN-M2 target verified")
           PY
+          python3 .github/ci/zn-m2-wifi-no.py verify
 
       - name: Download packages
         run: make download -j16
@@ -165,6 +169,7 @@ jobs:
 
       - name: Verify ZN-M2 firmware
         run: |
+          python3 .github/ci/zn-m2-wifi-no.py manifest
           dest=bin/targets/qualcommax/ipq60xx
           find "$dest" -maxdepth 1 -type f -name '*-zn_m2-*-factory.ubi' -print -quit | grep -q .
           find "$dest" -maxdepth 1 -type f -name '*-zn_m2-*-sysupgrade.bin' -print -quit | grep -q .
@@ -181,18 +186,18 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZN-M2_buildinfo
+          name: ZN-M2_WIFI-NO_buildinfo
           path: ./artifact/buildinfo/
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: ZN-M2_package
+          name: ZN-M2_WIFI-NO_package
           path: ./artifact/package/
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: ZN-M2_firmware
+          name: ZN-M2_WIFI-NO_firmware
           path: ./bin/targets/qualcommax/ipq60xx/
           if-no-files-found: error
