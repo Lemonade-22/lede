@@ -62,7 +62,12 @@ def prepare():
 
 def configure():
     # Use actual package metadata, including feed packages; do not invent symbols.
-    packages = re.findall(r"^Package: (.+)$", Path("tmp/.packageinfo").read_text(), re.M)
+    # Feeds may embed GBK in descriptions; only package names are consumed.
+    packages = re.findall(
+        r"^Package: (.+)$",
+        Path("tmp/.packageinfo").read_text(encoding="utf-8", errors="replace"),
+        re.M,
+    )
     blocked = sorted(name for name in packages if wireless(name))
     if not {"kmod-ath11k-ahb", "wpad-openssl", "ath11k-firmware-ipq6018"} <= set(blocked):
         raise SystemExit("Expected wireless packages missing from package metadata")
