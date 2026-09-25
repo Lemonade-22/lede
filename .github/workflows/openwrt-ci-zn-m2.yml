@@ -123,18 +123,30 @@ jobs:
           # CONFIG_TARGET_MULTI_PROFILE is not set
           # CONFIG_TARGET_PER_DEVICE_ROOTFS is not set
           # CONFIG_TESTING_KERNEL is not set
-          CONFIG_PACKAGE_ipq-wifi-zn_m2=y
           EOF
           make defconfig
-          grep -qx 'CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y' .config
-          grep -qx 'CONFIG_PACKAGE_ipq-wifi-zn_m2=y' .config
-          grep -qx 'CONFIG_PACKAGE_kmod-ath11k-ahb=y' .config
-          grep -qx 'CONFIG_PACKAGE_ath11k-firmware-ipq6018=y' .config
           mkdir -p ./artifact/buildinfo
           cp .config ./artifact/buildinfo/config.txt
           ./scripts/diffconfig.sh > ./artifact/buildinfo/diffconfig.txt
           git rev-parse HEAD > ./artifact/buildinfo/source-commit.txt
           ./scripts/feeds list -s > ./artifact/buildinfo/feeds.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          config = set(Path(".config").read_text().splitlines())
+          required = (
+              "CONFIG_TARGET_qualcommax=y",
+              "CONFIG_TARGET_qualcommax_ipq60xx=y",
+              "CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_zn_m2=y",
+              "CONFIG_PACKAGE_kmod-ath11k-ahb=y",
+              "CONFIG_PACKAGE_ath11k-firmware-ipq6018=y",
+          )
+          missing = [line for line in required if line not in config]
+          for line in missing:
+              print(f"::error::Required configuration missing after make defconfig: {line}")
+          if missing:
+              raise SystemExit(1)
+          print("ZN-M2 target and LEDE default WiFi packages verified")
+          PY
 
       - name: Download packages
         run: make download -j16
@@ -166,6 +178,7 @@ jobs:
           find ./bin/targets/ -type f \( -name '*.buildinfo' -o -name '*.manifest' \) -exec cp -t ./artifact/buildinfo/ {} +
 
       - name: Upload buildinfo
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: ZN-M2_buildinfo
