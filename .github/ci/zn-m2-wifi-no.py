@@ -51,13 +51,25 @@ def prepare():
             removed.append(relative)
     if not removed:
         raise SystemExit("No wireless LuCI pages found; review the feed layout")
-    # Match OWRT ZN-M2 WIFI-NO: leave RAM reservations and Q6 layout unchanged.
+    # LEDE enables WiFi in the shared ipq6018-cmiot.dtsi. Override this board only.
     path = Path("target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-m2.dts")
     text = path.read_text()
-    text, count = re.subn(r'(&wifi\s*\{\s*)status = "okay";', r'\1status = "disabled";', text)
+    updated, count = re.subn(
+        r'(&wifi\s*\{\s*)status = "okay";',
+        r'\1status = "disabled";',
+        text,
+        count=1,
+    )
+    if count == 0:
+        updated, count = re.subn(
+            r'(&wifi\s*\{)',
+            r'\1\n\tstatus = "disabled";',
+            text,
+            count=1,
+        )
     if count != 1:
-        raise SystemExit("Expected one enabled ZN-M2 WiFi node")
-    path.write_text(text)
+        raise SystemExit("Expected one ZN-M2 WiFi node")
+    path.write_text(updated)
     print("Removed wireless UI entries:", *removed, sep="\n")
 
 def configure():

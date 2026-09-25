@@ -79,31 +79,34 @@ jobs:
           root = Path("target/linux/qualcommax")
           dts = root / "files/arch/arm64/boot/dts/qcom"
           board = (dts / "ipq6018-m2.dts").read_text()
-          common = (dts / "ipq6018-viking-cmiot.dtsi").read_text()
+          cmiot = (dts / "ipq6018-cmiot.dtsi").read_text()
           def require(condition, message):
               if not condition:
                   raise SystemExit(message)
-          require('#include "ipq6018-viking-cmiot.dtsi"' in board, "Unexpected ZN-M2 DTS include")
-          require('#include "ipq6018-common.dtsi"' in common, "Missing common IPQ6018 DTS")
-          # Same board layout as VIKINGYFY/immortalwrt owrt, c0a6ac7a2bfb.
-          # U-Boot must supply the actual DRAM size from its DDR/CDT setup.
-          # ath11k memory mode is a firmware allocation profile, not DRAM size.
+          require('#include "ipq6018-cmiot.dtsi"' in board, "Unexpected ZN-M2 DTS include")
+          require("ipq6018-viking-cmiot.dtsi" not in board, "ZN-M2 still uses the VIKING PCS DTS")
+          require('#include "ipq6018-ess.dtsi"' in cmiot, "Missing LEDE ESS DTS")
+          require("&uniphy0" not in cmiot and "pcs-handle" not in cmiot,
+                  "ZN-M2 DTS uses OpenWrt PCS bindings")
+          # ipq6018-512m.dtsi only resizes the Q6 reservation. U-Boot supplies DRAM.
           seen = set()
           def check_includes(path):
               if path in seen:
                   return
               seen.add(path)
               text = path.read_text()
+              require("&uniphy0" not in text and "pcs-handle" not in text,
+                      f"OpenWrt PCS binding in {path.name}")
               require(not re.search(r'\bmem=|\blinux,usable-memory|(?<![\w-])memory(?:@[0-9a-fA-F]+)?\s*\{|&memory\s*\{', text),
                       f"Fixed RAM override in {path}")
               for name in re.findall(r'#include\s+"([^"]+)"', text):
-                  require(not re.search(r'-(?:256|512)m|-(?:1|2)g', name), f"Fixed RAM include: {name}")
                   child = path.parent / name
                   if child.is_file():
                       check_includes(child)
           check_includes(dts / "ipq6018-m2.dts")
-          require('qcom,ath11k-fw-memory-mode = <1>;' in board, "Missing ath11k memory profile")
-          require('compatible = "qcom,smem-part";' in common, "Missing SMEM NAND partitions")
+          require('qcom,ath11k-fw-memory-mode = <1>;' in cmiot, "Missing ath11k memory profile")
+          require('compatible = "qcom,smem-part";' in cmiot, "Missing SMEM NAND partitions")
+          require('#include "ipq6018-512m.dtsi"' in cmiot, "Missing 512 MiB Q6 reservation")
           image = (root / "image/ipq60xx.mk").read_text()
           match = re.search(r"(?ms)^define Device/zn_m2\n.*?^endef$", image)
           require(match is not None, "Missing ZN-M2 image profile")
@@ -111,7 +114,7 @@ jobs:
           for value in ("$(call Device/FitImage)", "$(call Device/UbiFit)",
                         "DEVICE_DTS := ipq6018-m2", "DEVICE_DTS_CONFIG := config@cp03-c1"):
               require(value in block, f"Unexpected ZN-M2 image profile: {value}")
-          print("ZN-M2: bootloader-supplied RAM, shared image for 512 MiB / 1 GiB DDR configurations")
+          print("ZN-M2: LEDE NSS switch DTS, bootloader-supplied RAM")
           PY
 
       - name: Remove wireless defaults and LuCI pages
