@@ -1,0 +1,66 @@
+name: Sync upstream LEDE
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-master
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+
+      - name: Merge upstream and restore native CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/coolsnowwolf/lede.git
+          git fetch upstream master
+          native=.github/workflows/openwrt-ci.yml
+          if ! git merge-base --is-ancestor upstream/master HEAD; then
+            if ! git merge --no-commit --no-ff upstream/master; then
+              # Only the native workflow is owned entirely by upstream.
+              if git diff --name-only --diff-filter=U | grep -Fxq "$native"; then
+                git restore --source=upstream/master --staged --worktree -- "$native"
+              fi
+              if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+                git diff --name-only --diff-filter=U
+                git merge --abort
+                echo "::error::Upstream conflicts with custom changes; nothing was pushed."
+                exit 1
+              fi
+              git rev-parse -q --verify MERGE_HEAD >/dev/null
+            fi
+          fi
+          git restore --source=upstream/master --staged --worktree -- "$native"
+          if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            git commit -m "chore: merge upstream LEDE and preserve custom workflows"
+          elif ! git diff --cached --quiet; then
+            git commit -m "ci: restore native OpenWrt-CI from upstream"
+          fi
+          if ! git push origin HEAD:master; then
+            echo "::error::Push failed. Check concurrent changes or branch protection. For upstream workflow changes, set UPSTREAM_SYNC_TOKEN with Contents and Workflows write permissions (classic PAT: repo and workflow)."
+            exit 1
+          fi
+          {
+            echo "### LEDE upstream synchronization"
+            echo "Upstream: $(git rev-parse upstream/master)"
+            echo "Result: $(git rev-parse HEAD)"
+            echo "Native OpenWrt-CI matches upstream; custom changes retained."
+          } >> "$GITHUB_STEP_SUMMARY"
