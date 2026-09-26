@@ -19,8 +19,8 @@
 		/* Aliases as required by u-boot to patch MAC addresses */
 		ethernet0 = &dp1;
 		ethernet1 = &dp2;
-		ethernet2 = &dp3;
-		ethernet3 = &dp4;
+		ethernet2 = &dp4;
+		ethernet3 = &dp5;
 	};
 
 	chosen {
@@ -88,29 +88,25 @@
 &dp1 {
 	phy-handle = <&qca8075_0>;
 	status = "okay";
-	qcom,id = <5>;
-	label = "wan";
+	label = "lan3";
 };
 
 &dp2 {
 	phy-handle = <&qca8075_1>;
 	status = "okay";
-	qcom,id = <1>;
-	label = "lan1";
-};
-
-&dp3 {
-	phy-handle = <&qca8075_2>;
-	status = "okay";
-	qcom,id = <2>;
 	label = "lan2";
 };
 
 &dp4 {
 	phy-handle = <&qca8075_3>;
 	status = "okay";
-	qcom,id = <4>;
-	label = "lan3";
+	label = "lan1";
+};
+
+&dp5 {
+	phy-handle = <&qca8075_4>;
+	status = "okay";
+	label = "wan";
 };
 
 &edma {
@@ -123,24 +119,32 @@
 	pinctrl-names = "default";
 	reset-gpios = <&tlmm 75 GPIO_ACTIVE_LOW>;
 
-	qca8075_0: ethernet-phy@0 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <4>;
-	};
-
-	qca8075_1: ethernet-phy@1 {
-		compatible = "ethernet-phy-ieee802.3-c22";
+	ethernet-phy-package@0 {
+		compatible = "qcom,qca8075-package";
+		qcom,package-mode = "psgmii";
+		#address-cells = <1>;
+		#size-cells = <0>;
 		reg = <0>;
-	};
 
-	qca8075_2: ethernet-phy@2 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <1>;
-	};
+		qca8075_0: ethernet-phy@0 {
+			compatible = "ethernet-phy-ieee802.3-c22";
+			reg = <0>;
+		};
 
-	qca8075_3: ethernet-phy@3 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <3>;
+		qca8075_1: ethernet-phy@1 {
+			compatible = "ethernet-phy-ieee802.3-c22";
+			reg = <1>;
+		};
+
+		qca8075_3: ethernet-phy@3 {
+			compatible = "ethernet-phy-ieee802.3-c22";
+			reg = <3>;
+		};
+
+		qca8075_4: ethernet-phy@4 {
+			compatible = "ethernet-phy-ieee802.3-c22";
+			reg = <4>;
+		};
 	};
 };
 
@@ -149,9 +153,9 @@
 
 	switch_lan_bmp = <0x16>; /* lan port bitmap */
 	switch_wan_bmp = <0x20>; /* wan port bitmap */
-	switch_mac_mode = <0x0>; /* MAC mode for UNIPHY instance 0 */
-	switch_mac_mode1 = <0x0>; /* MAC mode for UNIPHY instance 1 */
-	switch_mac_mode2 = <0x0>; /* MAC mode for UNIPHY instance 2 */
+	switch_mac_mode = <0x0>; /* PSGMII on UNIPHY0; matches ZN-M2 hardware */
+	switch_mac_mode1 = <0xff>; /* unused */
+	switch_mac_mode2 = <0xff>; /* unused */
 
 	qcom,port_phyinfo {
 		port@0 {
